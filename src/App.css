@@ -41,10 +41,15 @@
   width: 500px;
 }
 .table {
-  width: 500px;
+  width: 550px;
 }
 
 .grid {
   display: grid;
-  width: 400px;
+  width: 525px;
+}
+
+.table-container {
+  height: 600px;
+  overflow: auto;
 }

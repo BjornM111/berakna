@@ -1,7 +1,7 @@
 import React, {useState, useEffect} from 'react';
 import './App.css';
 import {parse, ParseResult} from 'papaparse';
-import {DateTime} from 'luxon';
+import {DateTime, Duration} from 'luxon';
 
 const isData = (data: any): data is string[][] => true;
 
@@ -23,75 +23,157 @@ function Table(props: {
   title: React.ReactNode,
   disabled?: (value: string) => boolean,
 }) {
-
+  const rows = [...props.rows].sort((a, b) => {
+    if (a[1]<b[1]) return -1;
+    if (a[1]>b[1]) return 1;
+    return 0;
+  })
   return (
     <div className="table">
       {props.title}
-      <div className="grid">
-        {props.rows.map((row, i) =>
-          [
-            <div 
-              key={i+"a"}
-              style={{
-                gridRow: i+1,
-                gridColumn: 1,
-                color: props.disabled && props.disabled(row[1])
-                  ? "#ccc"
-                  : undefined,
-              }}
-            >
-              {row[0].toFormat('dd/MM/yyyy')}
-            </div>,
-            <div
-              key={i+"b"}
-              style={{
-                gridRow: i+1,
-                gridColumn: 2,
-                color: props.disabled && props.disabled(row[1])
-                  ? "#ccc"
-                  : undefined,
-              }}
-              onClick={() => props.onClick(row[1])}
-            >
-              {row[1]}
-            </div>,
-            <div
-              key={i+"c"}
-              style={{
-                gridRow: i+1,
-                gridColumn: 3,
-                color: props.disabled && props.disabled(row[1])
-                  ? "#ccc"
-                  : undefined,
-              }}
-            >
-              {row[2]}
-            </div>,
-          ]
-        ).flat()}
+      <div className="table-container">
+        <div className="grid">
+          {rows.map((row, i) =>
+            [
+              <div 
+                key={i+"a"}
+                style={{
+                  gridRow: i+1,
+                  gridColumn: 1,
+                  color: props.disabled && props.disabled(row[1])
+                    ? "#ccc"
+                    : undefined,
+                }}
+              >
+                {row[0].toFormat('dd/MM/yyyy')}
+              </div>,
+              <div
+                key={i+"b"}
+                style={{
+                  gridRow: i+1,
+                  gridColumn: 2,
+                  color: props.disabled && props.disabled(row[1])
+                    ? "#ccc"
+                    : undefined,
+                }}
+              >
+                {row[1].split(' ').map(word =>
+                  <span onClick={() => props.onClick(word)} style={{marginRight: 4}}>
+                    {word}
+                  </span>
+                )}
+              </div>,
+              <div
+                key={i+"c"}
+                style={{
+                  gridRow: i+1,
+                  gridColumn: 3,
+                  color: props.disabled && props.disabled(row[1])
+                    ? "#ccc"
+                    : undefined,
+                  textAlign: "right",
+                }}
+              >
+                {new Intl.NumberFormat('en').format(row[2])}
+              </div>,
+            ]
+          ).flat()}
+        </div>
       </div>
     </div>
   );
 }
 
 
-function Graph(props: {names: string[], graphs: [DateTime, number][][]}) {
-  const minDate = DateTime.min(...props.graphs.map(graph => graph[0][0])).valueOf();
-  const maxDate = DateTime.max(...props.graphs.map(graph => graph[graph.length-1][0])).valueOf();
-  const dateDiv = maxDate-minDate;
+function Graph2(props: {names: string[], graphs: [DateTime, number][][]}) {
+  if (!props.names.length) return null;
 
-  const minValue = Math.min(...props.graphs.map(graph => graph.map(point => point[1])).flat());
-  const maxValue = Math.max(...props.graphs.map(graph => graph.map(point => point[1])).flat());
+  const minDate = DateTime.min(...props.graphs.map(graph => graph[0][0]));
+  const maxDate = DateTime.max(...props.graphs.map(graph => graph[graph.length-1][0]));
+  const numMonths = Math.ceil(maxDate.diff(minDate, 'months').months);
+
+  const monthlyData: Float32Array[] = [];
+  // aggregate the values over months
+  for (const graph of props.graphs) {
+    const values = new Float32Array(numMonths);
+    monthlyData.push(values);
+    for (const point of graph) {
+      let monthIndex = Math.floor(point[0].diff(minDate, 'months').months);
+      values[monthIndex] += point[1];
+    }
+  }
+  
+  const minValue = Math.min(...monthlyData.map(graph => [...graph]).flat());
+  const maxValue = Math.max(...monthlyData.map(graph => [...graph]).flat());
   const valueDiv = maxValue-minValue;
 
   return (
     <svg width="500" height="300">
-      {props.graphs.map((graph, i) =>
+      {/*props.graphs.map((graph, i) =>
         <path
           key={props.names[i]}
-          d={"M "+graph.map(point => `${(point[0].valueOf()-minDate)/dateDiv*500},${300 - (point[1]-minValue)/valueDiv*300}`).join(' L ')}
+          //d={"M "+graph.map(point => `${(point[0].valueOf()-minDate)/dateDiv*500},${300 - (point[1]-minValue)/valueDiv*300}`).join(' L ')}
           stroke={stringToColor(props.names[i])}
           fill="transparent"
+        />
+      )*/null}
+      {monthlyData.map((graph, i) =>
+        <path
+          key={props.names[i]}
+          d={"M "+[...graph].map((value, x) => `${x/numMonths*500},${300 - (value-minValue)/valueDiv*300}`).join(' L ')}
+          stroke={stringToColor(props.names[i])}
+          fill="transparent"
+        />
+      )}
+    </svg>
+  )
+}
+
+function Graph(props: {names: string[], graphs: [DateTime, number][][]}) {
+  if (!props.names.length) return null;
+
+  const minDate = DateTime.min(...props.graphs.map(graph => graph[0][0]));
+  const maxDate = DateTime.max(...props.graphs.map(graph => graph[graph.length-1][0]));
+  const numMonths = Math.ceil(maxDate.diff(minDate, 'months').months);
+
+  const monthlyData: Float32Array[] = [];
+  // aggregate the values over months
+  for (const graph of props.graphs) {
+    const values = new Float32Array(numMonths);
+    monthlyData.push(values);
+    for (const point of graph) {
+      let monthIndex = Math.floor(point[0].diff(minDate, 'months').months);
+      values[monthIndex] += point[1];
+    }
+  }
+  
+  const minValue = -100000
+  const maxValue = Math.max(...monthlyData.map(graph => [...graph]).flat());
+  //const valueDiv = maxValue-minValue;
+  const valueDiv  = minValue*-1;
+
+  const sum = new Float32Array(props.graphs[0].length);
+
+  return (
+    <svg width="500" height="300">
+      {/*props.graphs.map((graph, i) =>
+        <path
+          key={props.names[i]}
+          //d={"M "+graph.map(point => `${(point[0].valueOf()-minDate)/dateDiv*500},${300 - (point[1]-minValue)/valueDiv*300}`).join(' L ')}
+          stroke={stringToColor(props.names[i])}
+          fill="transparent"
+        />
+      )*/null}
+      {monthlyData.map((graph, i) =>
+        <path
+          key={props.names[i]}
+          d={"M "
+            +[...sum].reverse().map((value, x) => `${(sum.length-1-x)/numMonths*500},${(value-minValue)/valueDiv*300}`).join(' L ')
+            +' L '
+            +[...graph].map((value, x) => `${x/numMonths*500},${((sum[x]+=value)-minValue)/valueDiv*300}`).join(' L ')
+          }
+          fill={stringToColor(props.names[i])}
+          stroke="transparent"
         />
       )}
     </svg>
@@ -104,31 +186,48 @@ function App() {
   const [currentSearches, setCurrentSearches] = useState<string[]>([]);
   const [groupings, setGroupings] = useState<{name: string, searches: string[]}[]>([]);
   const [currentName, setCurrentName] = useState<string>("");
+
+  let dataPath: string;
+  dataPath = 'nordea-piffopuff';
+  dataPath = 'swedbank-bjorn';
   
   useEffect(() => {
-    parse('/Transaktioner_2020-04-10_08-52-52.csv', {
+    //parse('/Transaktioner_2020-04-10_08-52-52.csv', {
+    //parse('/piff_o_puff.csv', {
+    parse(`/${dataPath}.csv`, {
       download: true,
-      complete: function(result) {
-        let newData = result.data.slice(2, result.data.length-1);
+      complete(result) {
+        let newData = result.data.slice(2, result.data.length-2);
         if (!isData(newData)) return;
         if (newData.length<1) return;
         newData.reverse();
-        setData(newData.map(row => [
-          DateTime.fromFormat(row[5], 'yyyy-MM-dd'),
-          row[9],
-          Number(row[10]),
-        ]));
+
+        if (dataPath.startsWith('swedbank')) {
+          setData(newData.map(row => [
+            DateTime.fromFormat(row[5], 'yyyy-MM-dd'),
+            row[9],
+            Number(row[10]),
+          ]));
+        } else {
+          setData(newData.map(row => [
+            DateTime.fromFormat(row[0], 'yyyy-MM-dd'),
+            row[1].includes('Kortköp ')
+              ? row[1].split(' ').slice(2).join(' ')
+              : row[1],
+            Number(row[3].replace('.', '').replace(',', '.')),
+          ]));
+        }
       }
     })
   }, []);
 
   useEffect(() => {
-    setGroupings(JSON.parse(localStorage.getItem('groupings')||"[]"))
+    setGroupings(JSON.parse(localStorage.getItem(dataPath)||"[]"))
   }, []);
 
   const groupingsJson = JSON.stringify(groupings);
   useEffect(() => {
-    localStorage.setItem('groupings', groupingsJson);
+    localStorage.setItem(dataPath, groupingsJson);
   }, [groupingsJson]);
 
   if (!data) return <div className="App" />;
@@ -155,11 +254,22 @@ function App() {
     } catch (error) {}
   }
 
+  // summaries
+  const summaries = groups.map((group, i) =>
+    group.reduce(
+      (result, [,,value]) => result+value,
+      0,
+    )
+  );
+  const minSum = Math.min(...summaries);
+  const maxSum = Math.max(...summaries);
+  const sumDiv = maxSum-minSum;
+
   return (
     <div>
       <Graph
-        names={groupings.map(grouping => grouping.name)}
-        graphs={groups.map(group => group.map(point => [point[0], point[2]]))}
+        names={groupings.slice(1).map(grouping => grouping.name)}
+        graphs={groups.slice(1).map(group => group.map(point => [point[0], point[2]]))}
       />
       <input
         type="text"
@@ -222,23 +332,38 @@ function App() {
               }}>{groupings[i].name}</span>}
           />
             )*/null}
-        <div style={{textAlign: "right"}}>
-          {groups.map((group, i) =>
-            <div 
-              onClick={() => {
-                setCurrentName(groupings[i].name);
-                setCurrentSearches([...currentSearches, ...groupings[i].searches])
-                setGroupings([
-                  ...groupings.slice(0, i),
-                  ...groupings.slice(i+1),
-                ]);
-              }}
-              key={i}
-              style={{
-                color: stringToColor(groupings[i].name)
-              }}
-            >
-              {groupings[i].name}
+        <div>
+          {summaries.map((sum, i) =>
+            <div style={{display: "flex"}}>
+              <div 
+                onClick={() => {
+                  setCurrentName(groupings[i].name);
+                  setCurrentSearches([...currentSearches, ...groupings[i].searches])
+                  setGroupings([
+                    ...groupings.slice(0, i),
+                    ...groupings.slice(i+1),
+                  ]);
+                }}
+                key={i}
+                style={{
+                  color: stringToColor(groupings[i].name),
+                  display: "flex",
+                  width: 200,
+                }}
+              >
+                <div style={{flex: 1}}>{groupings[i].name}</div>
+                <div style={{textAlign: "right"}}>{new Intl.NumberFormat('en').format(sum/12)}</div>
+              </div>
+              <div style={{width: 300}}>
+                <div
+                  style={{
+                    background: stringToColor(groupings[i].name),
+                    height: 20,
+                    width: Math.abs(sum/sumDiv) *300,
+                    marginLeft: (minSum/sumDiv *-1 + Math.min(0, sum/sumDiv)) *300,
+                  }}
+                />
+              </div>
             </div>
           )}
         </div>
